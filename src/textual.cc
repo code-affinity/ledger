@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2012, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2013, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -148,7 +148,7 @@ namespace {
     void account_value_directive(account_t * account, string expr_str);
     void account_default_directive(account_t * account);
 
-    void default_account_directive(char * line);
+    void default_account_directive(char * args);
     void alias_directive(char * line);
 
     void payee_directive(char * line);
@@ -282,6 +282,10 @@ void instance_t::parse()
     }
   }
 
+#if defined(TIMELOG_SUPPORT)
+  timelog.close();
+#endif // TIMELOG_SUPPORT
+
   TRACE_STOP(instance_parse, 1);
 }
 
@@ -397,7 +401,7 @@ void instance_t::read_next_directive(bool& error_flag)
 #endif // TIMELOG_SUPPORT
 
       case 'A':                 // a default account for unbalanced posts
-        default_account_directive(line);
+        default_account_directive(line + 1);
         break;
       case 'C':                 // a set of conversions
         price_conversion_directive(line);
@@ -492,7 +496,7 @@ void instance_t::default_commodity_directive(char * line)
 
 void instance_t::default_account_directive(char * line)
 {
-  context.journal->bucket = top_account()->find_account(skip_ws(line + 1));
+  context.journal->bucket = top_account()->find_account(skip_ws(line));
   context.journal->bucket->add_flags(ACCOUNT_KNOWN);
 }
 
@@ -532,9 +536,8 @@ void instance_t::option_directive(char * line)
       *p++ = '\0';
   }
 
-  path abs_path(filesystem::absolute(context.pathname,
-                                     context.current_directory));
-  if (! process_option(abs_path.string(), line + 2, *context.scope, p, line))
+  if (! process_option(context.pathname.string(), line + 2, *context.scope,
+                       p, line))
     throw_(option_error, _f("Illegal option --%1%") % (line + 2));
 }
 
@@ -576,7 +579,7 @@ void instance_t::automated_xact_directive(char * line)
           item = ae.get();
 
         // This is a trailing note, and possibly a metadata info tag
-        item->append_note(p + 1, *context.scope, true);
+        ae->append_note(p + 1, *context.scope, true);
         item->add_flags(ITEM_NOTE_ON_NEXT_LINE);
         item->pos->end_pos = context.curr_pos;
         item->pos->end_line++;
@@ -845,7 +848,8 @@ void instance_t::apply_tag_directive(char * line)
 void instance_t::apply_rate_directive(char * line)
 {
   if (optional<std::pair<commodity_t *, price_point_t> > price_point =
-      commodity_pool_t::current_pool->parse_price_directive(trim_ws(line), true)) {
+      commodity_pool_t::current_pool->parse_price_directive
+        (trim_ws(line), true, true)) {
     apply_stack.push_front
       (application_t("fixed", fixed_rate_t(price_point->first,
                                            price_point->second.price)));
@@ -1442,6 +1446,9 @@ post_t * instance_t::parse_post(char *          line,
                         PARSE_NO_REDUCE | PARSE_SINGLE | PARSE_NO_ASSIGN,
                         defer_expr, &post->amount_expr);
 
+    DEBUG("textual.parse", "line " << context.linenum << ": "
+          << "post amount = " << post->amount);
+
     if (! post->amount.is_null() && post->amount.has_commodity()) {
       context.journal->register_commodity(post->amount.commodity(), post.get());
 
@@ -1453,14 +1460,13 @@ post_t * instance_t::parse_post(char *          line,
             annotation_t details(rate.second);
             details.add_flags(ANNOTATION_PRICE_FIXATED);
             post->amount.annotate(details);
+            DEBUG("textual.parse", "line " << context.linenum << ": "
+                  << "applied rate = " << post->amount);
             break;
           }
         }
       }
     }
-
-    DEBUG("textual.parse", "line " << context.linenum << ": "
-          << "post amount = " << post->amount);
 
     if (stream.eof()) {
       next = NULL;

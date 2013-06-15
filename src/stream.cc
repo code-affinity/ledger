@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2012, John Wiegley.  All rights reserved.
+ * Copyright (c) 2003-2013, John Wiegley.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
@@ -47,11 +47,6 @@ namespace {
    * the other is still Ledger.
    *
    * This function returns only for the process that is still Ledger.
-   *
-   * @param out Pointer to a pointer to the output stream.  This The
-   * pointer to the output stream is changed so that the stream is
-   * connected to the stdin of the pager.  The caller is responsible for
-   * cleaning this up.
    *
    * @param pager_path Path to the pager command.
    *
